@@ -42,7 +42,7 @@ def load_config():
         cfg = {}
         cfg['output_folder'] = config['DEFAULT'].get('output_folder', 'download')
         cfg['query'] = config['SEARCH_CONFIG'].get('gmail_query', '').replace("'", "").replace('"', '')
-        cfg['filename_filter'] = config['SEARCH_CONFIG'].get('filename_must_contain', '')
+        cfg['filename_filter'] = config['SEARCH_CONFIG'].get('filename_must_contain', '').strip()
 
         s_start = config['SEARCH_CONFIG'].get('strict_start_date', '').strip()
         s_end = config['SEARCH_CONFIG'].get('strict_end_date', '').strip()
@@ -70,6 +70,7 @@ def download_attachments(service, cfg):
         count_skip = 0
         count_processed_emails = 0
         next_page_token = None
+        processed_threads = set()
 
         while True:
             results = service.users().messages().list(
@@ -85,81 +86,90 @@ def download_attachments(service, cfg):
                     print("--> Gmail API tidak menemukan email yang cocok")
                 break
 
-            print(f"--> Sedang memproses batch {len(messages)} email")
-
             for msg in messages:
-                count_processed_emails += 1
+                thread_id = msg['threadId']
+                
+                if thread_id in processed_threads:
+                    continue
+                processed_threads.add(thread_id)
                 
                 try:
-                    msg_detail = service.users().messages().get(userId='me', id=msg['id']).execute()
+                    thread_detail = service.users().threads().get(userId='me', id=thread_id).execute()
+                    thread_messages = thread_detail.get('messages', [])
                 except Exception:
                     continue
-                
-                msg_date_ms = int(msg_detail['internalDate'])
-                msg_date = datetime.fromtimestamp(msg_date_ms / 1000.0)
-                
-                if cfg['strict_start'] and msg_date < cfg['strict_start']:
-                    count_skip += 1
-                    continue
-                
-                if cfg['strict_end'] and msg_date >= cfg['strict_end']:
-                    count_skip += 1
-                    continue
 
-                payload = msg_detail.get('payload', {})
-                parts = payload.get('parts', [])
-
-                if not parts and 'body' in payload:
-                    parts = [payload]
-
-                all_parts = []
-                def extract_parts(parts_list):
-                    for p in parts_list:
-                        if p.get('filename'):
-                            all_parts.append(p)
-                        if p.get('parts'):
-                            extract_parts(p['parts'])
-                
-                extract_parts(parts)
-
-                for part in all_parts:
-                    filename = part.get('filename')
+                for msg_detail in thread_messages:
+                    count_processed_emails += 1
                     
-                    if filename:
-                        if cfg['filename_filter'] and cfg['filename_filter'] not in filename:
-                            continue
+                    msg_date_ms = int(msg_detail['internalDate'])
+                    msg_date = datetime.fromtimestamp(msg_date_ms / 1000.0)
+                    
+                    if cfg['strict_start'] and msg_date < cfg['strict_start']:
+                        count_skip += 1
+                        continue
+                    
+                    if cfg['strict_end'] and msg_date >= cfg['strict_end']:
+                        count_skip += 1
+                        continue
 
-                        data = None
-                        if 'data' in part['body']:
-                            data = part['body']['data']
-                        elif 'attachmentId' in part['body']:
-                            att_id = part['body']['attachmentId']
-                            try:
-                                att = service.users().messages().attachments().get(
-                                    userId='me', messageId=msg['id'], id=att_id).execute()
-                                data = att['data']
-                            except Exception:
-                                continue
+                    payload = msg_detail.get('payload', {})
+                    parts = payload.get('parts', [])
+
+                    if not parts and 'body' in payload:
+                        parts = [payload]
+
+                    all_parts = []
+                    def extract_parts(parts_list):
+                        for p in parts_list:
+                            if p.get('filename'):
+                                all_parts.append(p)
+                            if p.get('parts'):
+                                extract_parts(p['parts'])
+                    
+                    extract_parts(parts)
+
+                    for part in all_parts:
+                        filename = part.get('filename')
                         
-                        if data:
-                            file_data = base64.urlsafe_b64decode(data.encode('UTF-8'))
+                        if filename:
+                            if not filename.lower().endswith('.pdf'):
+                                continue
+
+                            if cfg['filename_filter'] and cfg['filename_filter'] not in filename:
+                                continue
+
+                            data = None
+                            if 'data' in part['body']:
+                                data = part['body']['data']
+                            elif 'attachmentId' in part['body']:
+                                att_id = part['body']['attachmentId']
+                                try:
+                                    att = service.users().messages().attachments().get(
+                                        userId='me', messageId=msg_detail['id'], id=att_id).execute()
+                                    data = att['data']
+                                except Exception:
+                                    continue
                             
-                            date_prefix = msg_date.strftime("%Y-%m-%d")
-                            clean_name = "".join([c for c in filename if c.isalpha() or c.isdigit() or c in "._- "]).strip()
-                            final_filename = f"{date_prefix}_{msg['id']}_{clean_name}"
-                            path = os.path.join(folder, final_filename)
-                            
-                            with open(path, 'wb') as f:
-                                f.write(file_data)
-                            
-                            print(f"--> [OK] {date_prefix} | {clean_name}")
-                            count_download += 1
+                            if data:
+                                file_data = base64.urlsafe_b64decode(data.encode('UTF-8'))
+                                
+                                date_prefix = msg_date.strftime("%Y-%m-%d")
+                                clean_name = "".join([c for c in filename if c.isalpha() or c.isdigit() or c in "._- "]).strip()
+                                final_filename = f"{date_prefix}_{msg_detail['id']}_{clean_name}"
+                                path = os.path.join(folder, final_filename)
+                                
+                                with open(path, 'wb') as f:
+                                    f.write(file_data)
+                                
+                                print(f"--> [OK] {date_prefix} | {clean_name}")
+                                count_download += 1
             
             next_page_token = results.get('nextPageToken')
             if not next_page_token:
                 break
         
-        print(f"--> Selesai Memproses total {count_processed_emails} email")
+        print(f"--> Selesai Memproses total {count_processed_emails} email dalam thread terkait")
         print(f"--> {count_download} file berhasil diunduh")
         print(f"--> {count_skip} email dilewati karena filter tanggal")
 
