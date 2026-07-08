@@ -80,7 +80,9 @@ Ekstrak-PDF-Gudang-Shell-main/
     ├── credentials.json             ← Kredensial OAuth Gmail API (RAHASIA)
     ├── token.json                   ← Token akses Gmail tersimpan (RAHASIA, auto-generate)
     ├── gmail.conf                   ← Konfigurasi pencarian & filter email
-    └── gudang.conf                  ← Konfigurasi pemetaan kode gudang & filter tanggal
+    ├── gudang.conf                  ← Konfigurasi pemetaan kode gudang & filter tanggal
+    └── lookup.conf                  ← Konfigurasi toleransi lookup untuk metode hanya lookup data
+
 ```
 
 ---
@@ -194,6 +196,19 @@ TANGGAL_SAMPAI = 28/02/2026
 | `TANGGAL_DARI` / `TANGGAL_SAMPAI` | Filter rentang tanggal faktur (format `DD/MM/YYYY`) yang akan disertakan dalam hasil ekstraksi PDF |
 
 > Gudang yang kodenya **tidak ditemukan** dalam pemetaan ini akan otomatis dikelompokkan ke sheet `DATA_LAIN`.
+
+### lookup.conf
+
+Mengatur toleransi di hasil file khususnya metode lookup data saja di file hasil.
+
+```ini
+1
+```
+
+| Parameter | Keterangan |
+|---|---|
+| `0` | Tidak ada toleransi sama sekali, artinya data benar-benar harus sesuai |
+| `1` | Dengan toleransi 1 dan -1 untuk datanya. Mendukung konfigurasi yang lebih besar, misalnya "5", namun hati-hati dengan angka yang lebih besar |
 
 ---
 
@@ -349,6 +364,7 @@ Digunakan saat sudah memiliki file `Laporan SHELL*.xlsx` (hasil ekstraksi manual
 | `token.json` | Token akses & refresh token Gmail (dibuat/diperbarui otomatis setelah login pertama) |
 | `gmail.conf` | Pengaturan query pencarian email & filter tanggal pengunduhan |
 | `gudang.conf` | Pemetaan kode gudang ke nama sheet & filter tanggal ekstraksi PDF |
+| `lookup.conf` | Fitur toleransi yang dapat disesuaikan |
 
 ---
 
