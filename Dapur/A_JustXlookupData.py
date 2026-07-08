@@ -27,6 +27,20 @@ def format_date_target(date_val):
 
 print("--> Memulai proses...")
 
+tolerance = 0.0
+conf_filename = "lookup.conf"
+
+if os.path.exists(conf_filename):
+    try:
+        with open(conf_filename, "r") as f:
+            content = f.read().strip()
+            tolerance = float(content)
+        print(f"--> Konfigurasi ditemukan: Toleransi selisih DPP diatur sebesar ±{tolerance} rupiah.")
+    except Exception as e:
+        print(f"--> Gagal membaca {conf_filename}, default ke toleransi = 0 (Exact Match). Error: {e}")
+else:
+    print(f"--> File {conf_filename} tidak ditemukan. Default ke toleransi = 0 (Exact Match).")
+
 source_files = glob.glob("data_export_*.xlsx")
 if not source_files:
     print("--> Error: File data_export_.....xlsx tidak ditemukan.")
@@ -52,12 +66,15 @@ for index, row in df_source.iterrows():
     clean_date = format_date_source(raw_date)
     
     if clean_date and pd.notna(dpp_val):
-        key = (clean_date, float(dpp_val))
+        dpp_float = float(dpp_val)
         
-        if key not in lookup_data:
-            lookup_data[key] = []
+        if clean_date not in lookup_data:
+            lookup_data[clean_date] = {}
             
-        lookup_data[key].append(no_fp)
+        if dpp_float not in lookup_data[clean_date]:
+            lookup_data[clean_date][dpp_float] = []
+            
+        lookup_data[clean_date][dpp_float].append(no_fp)
 
 target_files = glob.glob("Laporan SHELL*.xlsx")
 if not target_files:
@@ -100,10 +117,33 @@ for sheet in wb.worksheets:
                 except:
                     continue
                     
-                search_key = (target_date_str, target_dpp_float)
+                found_no_fp = None
                 
-                if search_key in lookup_data and len(lookup_data[search_key]) > 0:
-                    found_no_fp = lookup_data[search_key].pop(0)
+                if target_date_str in lookup_data:
+                    dpp_dict = lookup_data[target_date_str]
+                    
+                    if target_dpp_float in dpp_dict and len(dpp_dict[target_dpp_float]) > 0:
+                        found_no_fp = dpp_dict[target_dpp_float].pop(0)
+                        if not dpp_dict[target_dpp_float]:
+                            del dpp_dict[target_dpp_float]
+                    
+                    elif tolerance > 0:
+                        best_match_dpp = None
+                        min_diff = float('inf')
+                        
+                        for source_dpp in dpp_dict.keys():
+                            diff = abs(source_dpp - target_dpp_float)
+                            if diff <= tolerance and len(dpp_dict[source_dpp]) > 0:
+                                if diff < min_diff:
+                                    min_diff = diff
+                                    best_match_dpp = source_dpp
+                        
+                        if best_match_dpp is not None:
+                            found_no_fp = dpp_dict[best_match_dpp].pop(0)
+                            if not dpp_dict[best_match_dpp]:
+                                del dpp_dict[best_match_dpp]
+                                
+                if found_no_fp:
                     cell_no_fp.value = found_no_fp
                     match_count += 1
 
@@ -111,4 +151,4 @@ for sheet in wb.worksheets:
 
 print("--> Menyimpan file...")
 wb.save(target_filename)
-print("--> Selesai. Data berhasil disimpan dengan metode ticketing.")
+print("--> Selesai. Data berhasil disimpan dengan metode ticketing + fallback tolerance.")
