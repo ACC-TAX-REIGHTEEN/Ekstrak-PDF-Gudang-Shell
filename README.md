@@ -15,6 +15,7 @@ Skrip otomasi Python untuk **mengunduh lampiran PDF faktur dari Gmail**, **menge
   - [credentials.json & token.json (Gmail API)](#credentialsjson--tokenjson-gmail-api)
   - [gmail.conf](#gmailconf)
   - [gudang.conf](#gudangconf)
+  - [lookup.conf](#lookupconf)
 - [File Input yang Dibutuhkan](#file-input-yang-dibutuhkan)
 - [Cara Penggunaan](#cara-penggunaan)
   - [Menu 1: Ambil Data dari Gmail dan Proses](#menu-1-ambil-data-dari-gmail-dan-proses)
