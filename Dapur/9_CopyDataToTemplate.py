@@ -56,6 +56,14 @@ def main():
     template_file = "TEMPLATE.xlsx"
     target_file = "TEMPLATE_temp.xlsx"
     
+    if not os.path.exists(source_file):
+        print(f"--> Error: File {source_file} tidak ditemukan.")
+        return
+
+    if not os.path.exists(template_file):
+        print(f"--> Error: File {template_file} tidak ditemukan.")
+        return
+
     shutil.copy(template_file, target_file)
     print(f"--> Menggunakan file target: {target_file}")
 
@@ -67,6 +75,7 @@ def main():
 
     for sheet_name in wb_source.sheetnames:
         if sheet_name not in wb_target.sheetnames or sheet_name not in wb_template.sheetnames:
+            print(f"--> Lewati sheet {sheet_name}: Tidak ditemukan di file template.")
             continue
 
         print(f"--> Memproses Sheet: {sheet_name}")
@@ -85,10 +94,12 @@ def main():
             
             date_val = row[1]
             date_obj = None
+            
             if isinstance(date_val, str):
-                for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
+                date_str_clean = date_val.strip().replace('.', '/')
+                for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%Y-%m-%d %H:%M:%S"):
                     try:
-                        date_obj = datetime.strptime(date_val, fmt)
+                        date_obj = datetime.strptime(date_str_clean, fmt)
                         break
                     except ValueError:
                         pass
@@ -118,7 +129,7 @@ def main():
                     break
                     
             if found_header_row != -1:
-                print(f"--> Data {header_text} ditemukan. Menambahkan data...")
+                print(f"--> Data {header_text} ditemukan di baris {found_header_row}. Menyisipkan data...")
                 
                 data_start_row = found_header_row + 3
                 sum_row = -1
@@ -126,12 +137,15 @@ def main():
                 
                 while current_r <= ws_target.max_row + 500:
                     cell_k = ws_target.cell(row=current_r, column=11)
+                    val_k_str = str(cell_k.value).strip() if cell_k.value is not None else ""
+                    
                     is_merged_a = False
                     for merged in ws_target.merged_cells.ranges:
-                         if ws_target.cell(row=current_r, column=1).coordinate in merged:
-                             is_merged_a = True
-                             break
-                    if (cell_k.value and str(cell_k.value).strip().startswith("=")) or is_merged_a:
+                        if ws_target.cell(row=current_r, column=1).coordinate in merged:
+                            is_merged_a = True
+                            break
+                    
+                    if val_k_str.startswith("=") or is_merged_a or (cell_k.value is not None and current_r > data_start_row and ws_target.cell(row=current_r, column=2).value is None):
                         sum_row = current_r
                         break
                     current_r += 1
@@ -141,34 +155,37 @@ def main():
 
                 existing_sigs = set()
                 for r in range(data_start_row, sum_row):
-                    vals = []
-                    for c in range(1, max_col_source + 1):
-                        vals.append(ws_target.cell(row=r, column=c).value)
-                    sig = tuple(str(v) if v is not None else "" for v in vals)
-                    existing_sigs.add(sig)
+                    no_inv = str(ws_target.cell(row=r, column=3).value or "").strip()
+                    no_sj = str(ws_target.cell(row=r, column=4).value or "").strip()
+                    if no_inv or no_sj:
+                        existing_sigs.add((no_inv, no_sj))
 
                 rows_to_insert = []
                 for row_data in new_data_rows:
-                    vals = list(row_data)[:max_col_source]
-                    sig = tuple(str(v) if v is not None else "" for v in vals)
-                    if sig not in existing_sigs:
+                    inv_check = str(row_data[2] or "").strip()
+                    sj_check = str(row_data[3] or "").strip()
+                    if (inv_check, sj_check) not in existing_sigs:
                         rows_to_insert.append(row_data)
 
                 if rows_to_insert:
-                    print(f"--> Menyisipkan {len(rows_to_insert)} baris.")
+                    print(f"--> Menyisipkan {len(rows_to_insert)} baris data baru.")
                     ws_target.insert_rows(sum_row, amount=len(rows_to_insert))
                     
                     for idx, data_row in enumerate(rows_to_insert):
                         target_r = sum_row + idx
                         try:
                             ws_target.unmerge_cells(start_row=target_r, start_column=1, end_row=target_r, end_column=10)
-                        except:
+                        except Exception:
                             pass
 
                         for col_idx in range(1, max_col_visual + 1):
                             new_cell = ws_target.cell(row=target_r, column=col_idx)
                             if col_idx <= len(data_row):
-                                new_cell.value = data_row[col_idx-1]
+                                val = data_row[col_idx-1]
+                                if isinstance(val, datetime):
+                                    new_cell.value = val.strftime("%d/%m/%Y")
+                                else:
+                                    new_cell.value = val
                                 
                             tmpl_cell = ws_tmpl.cell(row=7, column=col_idx)
                             copy_cell_style(tmpl_cell, new_cell)
@@ -186,11 +203,11 @@ def main():
                     
                     try:
                         ws_target.merge_cells(start_row=new_sum_row, start_column=1, end_row=new_sum_row, end_column=10)
-                    except:
+                    except Exception:
                         pass
-                        
+            
             else:
-                print(f"--> Membuat blok baru untuk {header_text}")
+                print(f"--> Membuat blok tabel baru untuk {header_text}")
                 
                 last_row = ws_target.max_row
                 start_block_row = last_row + 3
@@ -215,7 +232,11 @@ def main():
                     for col_idx in range(1, max_col_visual + 1):
                         target_cell = ws_target.cell(row=current_data_row, column=col_idx)
                         if col_idx <= len(row_data):
-                            target_cell.value = row_data[col_idx-1]
+                            val = row_data[col_idx-1]
+                            if isinstance(val, datetime):
+                                target_cell.value = val.strftime("%d/%m/%Y")
+                            else:
+                                target_cell.value = val
                         
                         style_source = ws_tmpl.cell(row=7, column=col_idx)
                         copy_cell_style(style_source, target_cell)
@@ -240,7 +261,7 @@ def main():
                 cell_sum.font = Font(color="FF0000", bold=True)
 
     wb_target.save(target_file)
-    print(f"--> Proses selesai. File tersimpan: {target_file}")
+    print(f"--> Selesai. File tersimpan di: {target_file}")
 
 if __name__ == "__main__":
     main()
