@@ -26,7 +26,7 @@ required_files = [
 	"CTX.xlsx",
 	"gmail.conf",
 	"gudang.conf",
-	"lookup.conf",
+    "lookup.conf",
 	"__init__.py",
 	"TEMPLATE.xlsx",
 	"token.json"
